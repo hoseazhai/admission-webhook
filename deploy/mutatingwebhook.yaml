@@ -1,0 +1,24 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: "hello-webhook.leclouddev.com"
+webhooks:
+  - name: "hello-webhook.leclouddev.com"
+    objectSelector:
+      matchLabels:
+        hello: "true"
+    rules:
+      - apiGroups:   [""]
+        apiVersions: ["v1"]
+        operations:  ["CREATE"]
+        resources:   ["pods"]
+        scope:       "Namespaced"
+    clientConfig:
+      service:
+        namespace: "default"
+        name: "admission-registry"
+        path: "/mutate"
+      caBundle: ""
+    admissionReviewVersions: ["v1", "v1beta1"]
+    sideEffects: None
+    timeoutSeconds: 10
