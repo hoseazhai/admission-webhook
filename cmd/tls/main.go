@@ -118,14 +118,17 @@ func main() {
 func WriteFIle(filepath string, bts []byte) error {
 	f, err := os.Create(filepath)
 	if err != nil {
+		log.Println("创建失败")
 		return err
 	}
 	defer f.Close()
 
 	_, err = f.Write(bts)
 	if err != nil {
+		log.Println("写入失败")
 		return err
 	}
+	log.Println("创建成功")
 	return nil
 }
 
