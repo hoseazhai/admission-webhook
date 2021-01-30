@@ -98,6 +98,7 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
+	log.Println(serverPrivKeyPEM)
 	err = WriteFIle("/etc/webhook/certs/tls.crt", serverCertPEM.Bytes())
 	if err != nil {
 		log.Panic(err)
