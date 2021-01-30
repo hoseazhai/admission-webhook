@@ -98,12 +98,12 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	err = WriteFIle("/etc/webhook/certs/tls.crt", serverCertPEM)
+	err = WriteFIle("/etc/webhook/certs/tls.crt", serverCertPEM.Bytes())
 	if err != nil {
 		log.Panic(err)
 	}
 
-	err = WriteFIle("/etc/webhook/certs/tls.key", serverPrivKeyPEM)
+	err = WriteFIle("/etc/webhook/certs/tls.key", serverPrivKeyPEM.Bytes())
 	if err != nil {
 		log.Panic(err)
 	}
@@ -115,14 +115,14 @@ func main() {
 	log.Println("webhook admission config object generated successfully")
 }
 
-func WriteFIle(filepath string, sCert *bytes.Buffer) error {
+func WriteFIle(filepath string, bts []byte) error {
 	f, err := os.Create(filepath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	_, err = f.Write(sCert.Bytes())
+	_, err = f.Write(bts)
 	if err != nil {
 		return err
 	}
