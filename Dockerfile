@@ -11,6 +11,7 @@ COPY go.sum go.sum
 # Copy the go source
 COPY main.go main.go
 COPY pkg/ pkg/
+COPY cmd/ cmd/
 
 # Build
 ENV CGO_ENABLED=0
@@ -22,9 +23,15 @@ ENV GOPROXY="https://goproxy.cn,direct"
 # cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer
 RUN go mod download && \
-    go build -a -o admission-registry main.go && \
-    upx admission-registry
+    go build -a -o admission-webhook main.go && \
+    go build -a -o tls-manager cmd/tls/main.go && \
+    upx admission-webhook tls-manager
 
 FROM alpine:3.9.2
-COPY --from=builder /workspace/admission-registry .
+COPY --from=builder /workspace/admission-webhook .
 ENTRYPOINT ["/admission-registry"]
+
+
+FROM alpine:3.9.2 as tls
+COPY --from=builder /workspace/tls-manager .
+ENTRYPOINT ["/tls-manager"]
