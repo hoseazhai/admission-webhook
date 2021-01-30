@@ -3,134 +3,130 @@ package main
 import (
 	"bytes"
 	"context"
-	cryptorand "crypto/rand"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"fmt"
-	"github.com/hoseazhai/admission-webhook/pkg"
-	admissionv1 "k8s.io/api/admissionregistration/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log"
 	"math/big"
 	"os"
 	"time"
+
+	"github.com/hoseazhai/admission-webhook/pkg"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func main() {
-	var caPEM, serverCertPEM, serverPrivKeyPEM *bytes.Buffer
-	// CA config
+	// CA 配置
+	subject := pkix.Name{
+		Country:            []string{"CN"},
+		Province:           []string{"Beijing"},
+		Locality:           []string{"Beijing"},
+		Organization:       []string{"hosea.io"},
+		OrganizationalUnit: []string{"hosea.io"},
+	}
 	ca := &x509.Certificate{
-		SerialNumber: big.NewInt(2021),
-		Subject: pkix.Name{
-			Organization: []string{"hosea.io"},
-		},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().AddDate(1, 0, 0),
-		IsCA:                  true,
+		SerialNumber:          big.NewInt(2021),
+		Subject:               subject,
+		NotBefore:             time.Now(), // 有效期
+		NotAfter:              time.Now().AddDate(10, 0, 0),
+		IsCA:                  true, // 根证书
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		BasicConstraintsValid: true,
 	}
 
-	// CA private key
-	caPrivKey, err := rsa.GenerateKey(cryptorand.Reader, 4096)
+	// 生成CA私钥
+	caPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
 	if err != nil {
-		fmt.Println(err)
+		log.Panic(err)
 	}
 
-	// self signed CA certificate
-	caBytes, err := x509.CreateCertificate(cryptorand.Reader, ca, ca, &caPrivKey, caPrivKey)
+	// 创建自签名的 CA 证书
+	caBytes, err := x509.CreateCertificate(rand.Reader, ca, ca, &caPrivKey.PublicKey, caPrivKey)
 	if err != nil {
-		fmt.Println(err)
+		log.Panic(err)
 	}
 
-	// PEM encode CA cert
-	caPEM = new(bytes.Buffer)
-	_ = pem.Encode(caPEM, &pem.Block{
+	// 编码证书文件
+	caPEM := new(bytes.Buffer)
+	if err := pem.Encode(caPEM, &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: caBytes,
-	})
+	}); err != nil {
+		log.Panic(err)
+	}
 
-	dnsNames := []string{"admission-webhook", "admission-webhook.default", "admission-webhook.default.svc"}
+	dnsNames := []string{"admission-webhook",
+		"admission-webhook.default",
+		"admission-webhook.default.svc",
+		"admission-webhook.default.svc.cluster.local",
+	}
 	commonName := "admission-webhook.default.svc"
-
-	// server cert config
+	// 服务端的证书配置
+	subject.CommonName = commonName
 	cert := &x509.Certificate{
-		DNSNames: dnsNames,
-		Subject: pkix.Name{
-			CommonName:   commonName,
-			Organization: []string{"hosea.io"},
-		},
-		NotBefore:   time.Now(),
-		NotAfter:    time.Now().AddDate(1, 0, 0),
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:    x509.KeyUsageDigitalSignature,
+		DNSNames:     dnsNames,
+		SerialNumber: big.NewInt(2020),
+		Subject:      subject,
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().AddDate(1, 0, 0),
+		SubjectKeyId: []byte{1, 2, 3, 4, 6},
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:     x509.KeyUsageDigitalSignature,
 	}
 
-	// server private key
-	serverPriKey, err := rsa.GenerateKey(cryptorand.Reader, 4096)
+	// 生成服务端的私钥
+	serverPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
 	if err != nil {
-		fmt.Println(err)
+		log.Panic(err)
 	}
 
-	// sign the server cert
-	serverCertBytes, err := x509.CreateCertificate(cryptorand.Reader, cert, ca, &serverPriKey.PublicKey, caPrivKey)
+	// 对服务端私钥签名
+	serverCertBytes, err := x509.CreateCertificate(rand.Reader, cert, ca, &serverPrivKey.PublicKey, caPrivKey)
 	if err != nil {
-		fmt.Println(err)
+		log.Panic(err)
 	}
-
-	// PME encode the server cert and key
-	serverCertPEM = new(bytes.Buffer)
-	_ = pem.Encode(serverCertPEM, &pem.Block{
+	serverCertPEM := new(bytes.Buffer)
+	if err := pem.Encode(serverCertPEM, &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: serverCertBytes,
-	})
-	serverPrivKeyPEM = new(bytes.Buffer)
-	_ = pem.Encode(serverPrivKeyPEM, &pem.Block{
+	}); err != nil {
+		log.Panic(err)
+	}
+
+	serverPrivKeyPEM := new(bytes.Buffer)
+	if err := pem.Encode(serverPrivKeyPEM, &pem.Block{
 		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(serverPriKey),
-	})
-
-	err = os.MkdirAll("/etc/webhook/certs/", 0666)
-	if err != nil {
-		log.Panic(err)
-	}
-	log.Println(serverPrivKeyPEM)
-	err = WriteFIle("/etc/webhook/certs/tls.crt", serverCertPEM.Bytes())
-	if err != nil {
+		Bytes: x509.MarshalPKCS1PrivateKey(serverPrivKey),
+	}); err != nil {
 		log.Panic(err)
 	}
 
-	err = WriteFIle("/etc/webhook/certs/tls.key", serverPrivKeyPEM.Bytes())
-	if err != nil {
+	// 已经生成了CA server.pem server-key.pem
+
+	if err := os.MkdirAll("/etc/webhook/certs/", 0666); err != nil {
 		log.Panic(err)
 	}
 
-	log.Println("webhook sever tls generated successfully")
+	if err := pkg.WriteFile("/etc/webhook/certs/tls.crt", serverCertPEM.Bytes()); err != nil {
+		log.Panic(err)
+	}
+
+	if err := pkg.WriteFile("/etc/webhook/certs/tls.key", serverPrivKeyPEM.Bytes()); err != nil {
+		log.Panic(err)
+	}
+
+	log.Println("webhook server tls generated successfully")
+
 	if err := CreateAdmissionConfig(caPEM); err != nil {
 		log.Panic(err)
 	}
-	log.Println("webhook admission config object generated successfully")
-}
 
-func WriteFIle(filepath string, bts []byte) error {
-	f, err := os.Create(filepath)
-	if err != nil {
-		log.Println("创建失败")
-		return err
-	}
-	defer f.Close()
-
-	_, err = f.Write(bts)
-	if err != nil {
-		log.Println("写入失败")
-		return err
-	}
-	log.Println("创建成功")
-	return nil
+	log.Println("webhook admission configuration object generated successfully")
 }
 
 func CreateAdmissionConfig(caCert *bytes.Buffer) error {
@@ -150,7 +146,7 @@ func CreateAdmissionConfig(caCert *bytes.Buffer) error {
 
 	ctx := context.Background()
 	if validateCfgName != "" {
-		// 创建ValidatingWebhookConiguration
+		// 创建 ValidatingWebhookConfiguration
 		validateConfig := &admissionv1.ValidatingWebhookConfiguration{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: validateCfgName,
@@ -161,8 +157,8 @@ func CreateAdmissionConfig(caCert *bytes.Buffer) error {
 					ClientConfig: admissionv1.WebhookClientConfig{
 						CABundle: caCert.Bytes(),
 						Service: &admissionv1.ServiceReference{
-							Namespace: webhookNamespace,
 							Name:      webhookService,
+							Namespace: webhookNamespace,
 							Path:      &validatePath,
 						},
 					},
@@ -201,18 +197,19 @@ func CreateAdmissionConfig(caCert *bytes.Buffer) error {
 	}
 
 	if mutateCfgName != "" {
+		// 创建 MutatingWebhookConfiguration
 		mutateConfig := &admissionv1.MutatingWebhookConfiguration{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: mutateCfgName,
 			},
 			Webhooks: []admissionv1.MutatingWebhook{
 				{
-					Name: "io.hosea.admission-webhook",
+					Name: "io.ydzs.admission-webhook-mutate",
 					ClientConfig: admissionv1.WebhookClientConfig{
 						CABundle: caCert.Bytes(),
 						Service: &admissionv1.ServiceReference{
-							Namespace: webhookNamespace,
 							Name:      webhookService,
+							Namespace: webhookNamespace,
 							Path:      &mutatePath,
 						},
 					},
@@ -220,9 +217,9 @@ func CreateAdmissionConfig(caCert *bytes.Buffer) error {
 						{
 							Operations: []admissionv1.OperationType{admissionv1.Create},
 							Rule: admissionv1.Rule{
-								APIGroups:   []string{"apps", "v1"},
+								APIGroups:   []string{"apps", ""},
 								APIVersions: []string{"v1"},
-								Resources:   []string{"deployments", "service"},
+								Resources:   []string{"deployments", "services"},
 							},
 						},
 					},
@@ -249,5 +246,6 @@ func CreateAdmissionConfig(caCert *bytes.Buffer) error {
 			}
 		}
 	}
+
 	return nil
 }
