@@ -177,6 +177,10 @@ func CreateAdmissionConfig(caCert *bytes.Buffer) error {
 						se := admissionv1.SideEffectClassNone
 						return &se
 					}(),
+					ObjectSelector: &metav1.LabelSelector{
+						MatchLabels:      map[string]string{"localtime": "true"},
+						MatchExpressions: nil,
+					},
 				},
 			},
 		}

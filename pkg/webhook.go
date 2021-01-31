@@ -135,7 +135,11 @@ func (s *WebhookServer) validate(ar *admissionV1.AdmissionReview) *admissionV1.A
 	for _, container := range pod.Spec.Containers {
 		var whitelisted = false
 		for _, reg := range s.WhiteListRegistries {
+			klog.Infof("container.Images is %s, name is %s", container.Image, container.Name)
 			if strings.HasPrefix(container.Image, reg) {
+				whitelisted = true
+			}
+			if container.Image == "" {
 				whitelisted = true
 			}
 		}
