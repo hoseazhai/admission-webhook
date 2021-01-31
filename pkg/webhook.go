@@ -203,6 +203,8 @@ func (s *WebhookServer) mutate(ar *admissionV1.AdmissionReview) *admissionV1.Adm
 			MountPath: "/etc/localtime",
 		})
 	}
+	klog.Infof("pod.spec.containers %s", pod.Spec.Containers)
+	klog.Infof("pod.spec.containers.volume %s", pod.Spec.Containers[1].VolumeMounts)
 
 	containersBytes, err := json.Marshal(&pod.Spec.Containers)
 	if err != nil {
