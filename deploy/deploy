@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admission-webhook-sa
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: admission-webhook-clusterrole
+rules:
+  - verbs: ["*"]
+    resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+    apiGroups: ["admissionregistration.k8s.io"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admission-webhook-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admission-webhook-clusterrole
+subjects:
+  - kind: ServiceAccount
+    name: admission-webhook-sa
+    namespace: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admission-webhook
+  labels:
+    app: admission-webhook
+spec:
+  selector:
+    matchLabels:
+      app: admission-webhook
+  template:
+    metadata:
+      labels:
+        app: admission-webhook
+    spec:
+      serviceAccountName: admission-webhook-sa
+      initContainers:
+        - name: webhook-init
+          image: registry.cn-beijing.aliyuncs.com/kaite-open/tls-manager:v0.0.6
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /etc/webhook/certs
+          env:
+            - name: WEBHOOK_NAMESPACE
+              value: default
+            - name: WEBHOOK_SERVICE
+              value: admission-webhook
+            - name: VALIDATE_CONFIG
+              value: admission-webhook
+            - name: VALIDATE_PATH
+              value: /validate
+            - name: MUTATE_CONFIG
+              value: admission-webhook-mutate
+            - name: MUTATE_PATH
+              value: /mutate
+      containers:
+        - name: admission-webhook
+          image: registry.cn-beijing.aliyuncs.com/kaite-open/admission-webhook:v0.2.5
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: WHITELIST_REGISTRIES
+              value: "docker.io,gcr.io,registry.cn-beijing.aliyuncs.com"
+          ports:
+            - containerPort: 443
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /etc/webhook/certs
+              readOnly: true
+      volumes:
+        - name: webhook-certs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admission-webhook
+  labels:
+    app: admission-webhook
+spec:
+  ports:
+    - port: 443
+      targetPort: 443
+  selector:
+    app: admission-webhook
