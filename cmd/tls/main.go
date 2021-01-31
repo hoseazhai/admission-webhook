@@ -219,7 +219,7 @@ func CreateAdmissionConfig(caCert *bytes.Buffer) error {
 							Rule: admissionv1.Rule{
 								APIGroups:   []string{"apps", ""},
 								APIVersions: []string{"v1"},
-								Resources:   []string{"deployments", "services"},
+								Resources:   []string{"deployments", "services", "pods"},
 							},
 						},
 					},

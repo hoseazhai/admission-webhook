@@ -169,7 +169,7 @@ func (s *WebhookServer) mutate(ar *admissionV1.AdmissionReview) *admissionV1.Adm
 		message = ""
 	)
 
-	klog.Infof("AdmissionReview for Kind=%s, Namespace=%s Name=%s UID=%s",
+	klog.Infof("mutate  AdmissionReview for Kind=%s, Namespace=%s Name=%s UID=%s",
 		req.Kind.Kind, req.Namespace, req.Name, req.UID)
 
 	pod := &corev1.Pod{}
